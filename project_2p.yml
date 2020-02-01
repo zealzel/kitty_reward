@@ -1,0 +1,191 @@
+
+xlproject:
+  - name: txt
+    TO_TEXT: df
+
+  - name: excel
+    TO_EXCEL: df
+
+
+xlconverter:
+  - name: 2_point_bonus
+    first_row: 2
+    trim: role
+    idx_colname:
+      3: number
+      4: job_title
+      5: name
+      6: role
+      7: score
+      8: category
+      10: date
+      11: time 
+      12: content
+
+
+xlmerger:
+  - type: merge_files
+    name: df
+    converter_name: 2_point_bonus
+    sheet_name: 0
+    location: [source/temp.xlsx]
+
+
+xloutput:
+  template:
+    - name: ST-O3-106001-output-template
+      dir: xls_template 
+  output:
+    - template: ST-O3-106001-output-template
+      proj_result: excel
+      path: output/final_result.xlsx
+    
+
+xlrenderer:
+  first_row: 3
+  idx_colname:
+    2: number
+    3: name
+    4: job_title
+    5: cell_E
+    6: year
+    7: month
+    8: day
+    9: cell_I
+    10: cell_J
+    11: final_words
+    12: cell_L
+    13: points
+    14: bonus
+
+
+xlparser:
+  - name: TO_TEXT
+    output:
+      - type: group_by
+        args:
+          by: [number]
+          agg:
+            name: [name, min]
+            job_title: [job_title, min]
+            date_from: [date, min]
+            date_to: [date, max]
+            score: [score, sum]
+            category_list: [category,list]
+
+      - type: extend
+        args:
+          title: score
+          type: int
+          func: template@{score}
+
+      - type: extend
+        args:
+          title: warning
+          func: template@{format_date(date_from)}至{format_date(date_to)}期間，{job_title}{name}值勤時，積極處理旅客或民眾違規事件並{check_category(category_list)}。【{score}分】
+
+
+  - name: TO_EXCEL
+    output:
+      - type: extend
+        args:
+          title: datetime
+          type: datetime
+          func: template@{to_datetime(date, time)}
+
+      - type: group_by
+        args:
+          by: [number, content, datetime]
+          agg:
+            name: [name, min]
+            _date: [date, min]
+            job_title: [job_title, min]
+            category: [category, min]
+            role_list: [role, list]
+            role_list_count: [role, len]
+            score: [score, sum]
+
+      - type: extend
+        args:
+          title: [y_m_d_minguo, award_item]
+          type: [list, str]
+          func: template@{date_minguo_2p(datetime)}
+                        @{award_each(role_list, content, category)}
+
+      - type: group_by
+        args:
+          by: [number, _date, award_item]
+          agg:
+            name: [name, min]
+            job_title: [job_title, min]
+            content: [content, min]
+            date: [datetime, max]
+            date_list: [y_m_d_minguo, list]
+            role_list_sum: [role_list_count, sum]
+            score: [score, sum]
+      
+      - type: extend
+        args:
+          title: [award_item2]
+          func: template@{award_each2(award_item, date_list, role_list_sum)}
+
+      - type: group_by
+        args:
+          by: [number, award_item]
+          agg:
+            name: [name, min]
+            job_title: [job_title, min]
+            date_max: [date, max]
+            award_item2: [award_item2, list]
+            score: [score, sum]
+
+      - type: extend
+        args:
+          title: [award_item3, award_item4]
+          func: template@{award_each3(award_item, award_item2)}
+                        @{award_item3}{award_item}
+
+      - type: group_by
+        args:
+          by: [number]
+          agg:
+            name: [name, min]
+            job_title: [job_title, min]
+            award_item4: [award_item4, list]
+            date_max: [date_max, max]
+            score: [score, sum]
+
+      - type: extend
+        args:
+          title: [score, points, bonus]
+          type: [int, int, int]
+          func: template@{score}
+                        @{score // 2}
+                        @{points * 200}
+
+      - type: extend
+        args:
+          title: [words, final_words]
+          func: template@{concat_words(name, job_title, award_item4)}
+                        @{words}。符合發現者或開立裁處書或旅客補繳車費處理單者每成功取締1件得0.5積分，累積{score}分，敘優點{points}次之獎勵標準。
+
+      - name: 擷取年、月、日
+        type: extend
+        args:
+          title: [year, month, day]
+          type: [int, int, int]
+          func: template@{date_max.year - 1911}
+                        @{date_max.month}
+                        @{date_max.day}
+
+      - type: extend
+        args:
+          title: [cell_E, cell_I, cell_J, cell_L]
+          func: template@站務處
+                        @取締違規及開立裁處書或補繳車費處理單，累計積分達{score}分
+                        @依本公司從業人員優缺點記點標準表壹、一、1「執行專案或工作表現，經主管評鑑表現優良或有特殊貢獻，足堪表率者。」
+                        @優點
+
+      - type: filter
+        args:
+          itlte: [number, name, job_title, cell_E, year, month, day, cell_I, cell_J, final_words, cell_L, points, bonus]
