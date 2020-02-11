@@ -6,7 +6,7 @@ from fabric.config import Config
 PROJECT_NAME = 'kitty_reward'
 PROJECT_ROOT = '~/codes'
 PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
-REPO_URL = 'git@github.com:zealzel/xxx.git'
+REPO_URL = f'git@github.com:zealzel/{PROJECT_NAME}.git'
 USER = 'zealzel'
 HOST = '172.104.163.189'
 
