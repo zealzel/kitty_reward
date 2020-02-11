@@ -86,9 +86,10 @@ class xlRenderer():
 
         rows = dataframe_to_rows(df, index=True, header=False)
         ws = template.active
-        ws.insert_rows = insert_rows
 
+        ws.insert_rows = insert_rows
         ws.insert_rows(ws, self.first_row, len(df))
+
         xls_from = xlrd.open_workbook(xls_file, formatting_info=True)
         xls_sheet = xls_from.sheet_by_index(0)
         color_index = lambda row, col: (

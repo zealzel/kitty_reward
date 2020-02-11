@@ -29,7 +29,7 @@ import pandas as pd
 import pdb
 
 from explay.utils import is_buildin, replace_str, register_func
-from explay.openpyxl_ext import insert_rows
+#  from explay.openpyxl_ext import insert_rows
 
 from explay.agg_func import agg_functions
 from explay.post_func import common_funcs
