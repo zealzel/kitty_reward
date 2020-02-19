@@ -1,28 +1,137 @@
 import sys
 from fabric import Connection, task
-from invoke import Responder
+import invoke
 from fabric.config import Config
 
 PROJECT_NAME = 'kitty_reward'
 PROJECT_ROOT = '~/codes'
+HOME = '~/'
 PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
 REPO_URL = f'https://github.com/zealzel/{PROJECT_NAME}.git'
-USER = 'zealzel'
-HOST = '172.104.163.189'
+LOCAL_USER = 'zealzel'
+
+
+PYTHON_VER = '3.7.0'
+VIRTUALENV_NAME = PROJECT_NAME
+
+
+''' ssh comamand examples to access vagrant boxes
+ssh ubuntu@127.0.0.1 -p 2200 -i /Users/zealzel/vagrant_machines/xenial64/.vagrant/machines/default/virtualbox/private_key
+-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
+'''
+
+@task
+def xenial(ctx):
+    ctx.user = 'ubuntu'
+    ctx.vagrant_box = 'xenial64'
+    ctx.host = '127.0.0.1'
+    ctx.port = '2200'
+    ctx.key = f'/Users/{LOCAL_USER}/vagrant_machines/{ctx.vagrant_box}/.vagrant/machines/default/virtualbox/private_key'
+    ctx.forward_agent = True
+
+
+@task
+def linode(ctx):
+    ctx.user = 'zealzel'
+    ctx.vagrant_box = None
+    ctx.host = '172.104.163.189'
+    ctx.port = None
+    ctx.key = None
+    ctx.forward_agent = True
+
+
+def defined_kwargs(**kwargs):
+    return {k: v for k, v in kwargs.items() if v is not None}
 
 
 def get_connection(ctx):
-    try:
-        with Connection(ctx.host, ctx.user, forward_agent=ctx.forward_agent) as conn:
-            return conn
-    except Exception as e:
-        return None
+    if isinstance(ctx, Connection):
+        return ctx
+    else:
+        try:
+            with Connection(
+                **defined_kwargs(
+                    host=ctx.host,
+                    user=ctx.user,
+                    port=ctx.port,
+                    connect_kwargs={"key_filename": ctx.key},
+                    inline_ssh_env=True,
+                    forward_agent=ctx.forward_agent)
+                ) as conn:
+                return conn
+        except Exception as e:
+            return None
+
 
 @task
-def development(ctx):
-    ctx.user = USER
-    ctx.host = HOST
-    ctx.forward_agent = True
+def ls(ctx):
+    conn = get_connection(ctx)
+    conn.run('ls -al')
+
+
+@task
+def download_pip(ctx):
+    ''' === underscore is replaced with hyphens ===
+        fab download-pip
+    '''
+    url = 'https://bootstrap.pypa.io/get-pip.py'
+    conn = get_connection(ctx)
+    conn.run(f'curl {url} -o get-pip.py')
+    conn.run('python3 get-pip.py')
+
+
+@task
+def pyenv(ctx):
+    conn = get_connection(ctx)
+    conn.run('sudo apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev \
+              libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev \
+              xz-utils tk-dev libffi-dev liblzma-dev python-openssl git')
+    home = conn.run('echo $HOME').stdout.strip()
+    path = conn.run('echo $PATH').stdout.strip()
+    pyenv_root = f'{home}/.pyenv'
+    with conn.cd(HOME):
+        if conn.run('source ~/.bash_profile; pyenv --version', warn=True, hide=True).failed:
+            print('pyenv not installed')
+            conn.run(f'git clone https://github.com/pyenv/pyenv.git {pyenv_root}', warn=True)
+            conn.run('echo "export PYENV_ROOT={pyenv_root}" >> ~/.bash_profile')
+            conn.run('echo "export PATH={pyenv_root}/bin:$PATH" >> ~/.bash_profile')
+            l1 = 'if command -v pyenv 1>/dev/null 2>&1; then'
+            l2 = '  eval "$(pyenv init -)"'
+            l3 = 'fi'
+            lines = '\n'.join([l1, l2, l3])
+            conn.run(f"echo -e '{lines}' >> ~/.bash_profile")
+        else:
+            print('pyenv installed')
+            conn.run('git clone https://github.com/pyenv/pyenv-virtualenv.git'
+                     f' {pyenv_root}/plugins/pyenv-virtualenv', warn=True)
+            conn.run(f'source ~/.bash_profile; pyenv virtualenv {PYTHON_VER} {VIRTUALENV_NAME}')
+
+
+@task
+def set_virtualenv(ctx):
+    conn = get_connection(ctx)
+    with conn.cd(HOME):
+        conn.run(f'{HOME}/.local/bin/pip install virtualenv')
+
+
+@task
+def download_py_packages(ctx):
+    conn = get_connection(ctx)
+    with conn.cd(PROJECT_PATH):
+        conn.run(f'source ~/.bash_profile;' 
+                 f'pyenv activate {VIRTUALENV_NAME};' 
+                 f'pip install -U pip;'
+                 f'pip install -r requirements.txt')
+
+
+
+@task
+def echo(ctx, message): # with arguments
+    ''' === with positional argument ===
+        fab echo --message some_message
+    '''
+    conn = get_connection(ctx)
+    conn.run(f'echo {message}')
 
 
 def exists(file, dir):
@@ -31,24 +140,14 @@ def exists(file, dir):
 
 @task
 def pull(ctx, branch="master"):
-    # check if ctx is Connection object or Context object
-    # if Connection object then calling method from program
-    # else calling directly from terminal
-    if isinstance(ctx, Connection):
-        conn = ctx
-    else:
-        conn = get_connection(ctx)
-
+    conn = get_connection(ctx)
     with conn.cd(PROJECT_PATH):
         conn.run("git pull origin {}".format(branch))
 
 
 @task
 def clone(ctx):
-    if isinstance(ctx, Connection):
-        conn = ctx
-    else:
-        conn = get_connection(ctx)
+    conn = get_connection(ctx)
     with conn.cd(PROJECT_ROOT):
         ls_result = conn.run("ls").stdout
         ls_result = ls_result.split("\n")

@@ -1,4 +1,3 @@
--f file:///Users/zealzel/.pip/wheel
 appnope==0.1.0
 backcall==0.1.0
 Click==7.0
