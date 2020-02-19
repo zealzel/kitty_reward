@@ -1,4 +1,5 @@
 import sys
+from textwrap import dedent
 from fabric import Connection, task
 import invoke
 from fabric.config import Config
@@ -70,6 +71,43 @@ def ls(ctx):
 
 
 @task
+def provision(ctx):
+    conn = get_connection(ctx)
+    package_update(conn)
+    download_pip(conn)
+    pyenv(conn)
+
+
+@task
+def package_update(ctx):
+    conn = get_connection(ctx)
+    conn.run('sudo apt update')
+
+
+@task
+def appends_test(ctx):
+    conn = get_connection(ctx)
+    file = '~/.bash_profile'
+
+    # test1: single line
+    content1 = 'export PATH=$HOME/.local/bin:$PATH'
+
+    # test2: multiple lines
+    content2 = dedent('''
+    if command -v pyenv 1>/dev/null 2>&1; then
+      eval "$(pyenv init -)"
+    fi
+    ''').strip()
+
+    appends(conn, file, content1)
+    appends(conn, file, content2)
+
+
+def appends(conn, file, lines):
+    conn.run(f"echo -e '{lines}' >> ~/.bash_profile")
+
+
+@task
 def download_pip(ctx):
     ''' === underscore is replaced with hyphens ===
         fab download-pip
@@ -77,21 +115,38 @@ def download_pip(ctx):
     url = 'https://bootstrap.pypa.io/get-pip.py'
     conn = get_connection(ctx)
     conn.run(f'curl {url} -o get-pip.py')
+
+    '''
+        copy pip binary into ~/.local/bin
+    '''
     conn.run('python3 get-pip.py')
+
 
 
 @task
 def pyenv(ctx):
     conn = get_connection(ctx)
+
+    '''
+    Prerequisites for ubuntu
+    reference: https://github.com/pyenv/pyenv/wiki/Common-build-problems
+    '''
     conn.run('sudo apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev \
               libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev \
               xz-utils tk-dev libffi-dev liblzma-dev python-openssl git')
+
     home = conn.run('echo $HOME').stdout.strip()
     path = conn.run('echo $PATH').stdout.strip()
     pyenv_root = f'{home}/.pyenv'
+
     with conn.cd(HOME):
         if conn.run('source ~/.bash_profile; pyenv --version', warn=True, hide=True).failed:
             print('pyenv not installed')
+
+            '''
+            pyenv respository at github
+            https://github.com/pyenv/pyenv#locating-the-python-installation
+            '''
             conn.run(f'git clone https://github.com/pyenv/pyenv.git {pyenv_root}', warn=True)
             conn.run('echo "export PYENV_ROOT={pyenv_root}" >> ~/.bash_profile')
             conn.run('echo "export PATH={pyenv_root}/bin:$PATH" >> ~/.bash_profile')
@@ -101,25 +156,22 @@ def pyenv(ctx):
             lines = '\n'.join([l1, l2, l3])
             conn.run(f"echo -e '{lines}' >> ~/.bash_profile")
         else:
-            print('pyenv installed')
+            print('pyenv installed. download pyenv-virtualenv')
+            '''
+            pyenv-virtualenv respository at github
+            https://github.com/pyenv/pyenv-virtualenv
+            '''
             conn.run('git clone https://github.com/pyenv/pyenv-virtualenv.git'
                      f' {pyenv_root}/plugins/pyenv-virtualenv', warn=True)
             conn.run(f'source ~/.bash_profile; pyenv virtualenv {PYTHON_VER} {VIRTUALENV_NAME}')
 
 
 @task
-def set_virtualenv(ctx):
-    conn = get_connection(ctx)
-    with conn.cd(HOME):
-        conn.run(f'{HOME}/.local/bin/pip install virtualenv')
-
-
-@task
 def download_py_packages(ctx):
     conn = get_connection(ctx)
     with conn.cd(PROJECT_PATH):
-        conn.run(f'source ~/.bash_profile;' 
-                 f'pyenv activate {VIRTUALENV_NAME};' 
+        conn.run(f'source ~/.bash_profile;'
+                 f'pyenv activate {VIRTUALENV_NAME};'
                  f'pip install -U pip;'
                  f'pip install -r requirements.txt')
 
@@ -169,6 +221,10 @@ def deploy(ctx):
         #  checkout(conn, branch="dev")
         print("pulling latest code from dev branch...")
         pull(conn)
+
+        print("prepare python environment...")
+        download_py_packages(conn)
+
         #  print("migrating database....")
         #  migrate(conn)
         print("restarting the nginx...")
