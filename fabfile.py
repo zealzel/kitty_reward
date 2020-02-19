@@ -10,6 +10,7 @@ HOME = '~/'
 PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
 REPO_URL = f'https://github.com/zealzel/{PROJECT_NAME}.git'
 LOCAL_USER = 'zealzel'
+FILE_RC = f'{HOME}/.bash_profile'
 
 
 PYTHON_VER = '3.7.0'
@@ -148,33 +149,41 @@ def pyenv(ctx):
             https://github.com/pyenv/pyenv#locating-the-python-installation
             '''
             conn.run(f'git clone https://github.com/pyenv/pyenv.git {pyenv_root}', warn=True)
-            conn.run('echo "export PYENV_ROOT={pyenv_root}" >> ~/.bash_profile')
-            conn.run('echo "export PATH={pyenv_root}/bin:$PATH" >> ~/.bash_profile')
-            l1 = 'if command -v pyenv 1>/dev/null 2>&1; then'
-            l2 = '  eval "$(pyenv init -)"'
-            l3 = 'fi'
-            lines = '\n'.join([l1, l2, l3])
-            conn.run(f"echo -e '{lines}' >> ~/.bash_profile")
-        else:
-            print('pyenv installed. download pyenv-virtualenv')
-            '''
-            pyenv-virtualenv respository at github
-            https://github.com/pyenv/pyenv-virtualenv
-            '''
-            conn.run('git clone https://github.com/pyenv/pyenv-virtualenv.git'
-                     f' {pyenv_root}/plugins/pyenv-virtualenv', warn=True)
-            conn.run(f'source ~/.bash_profile; pyenv virtualenv {PYTHON_VER} {VIRTUALENV_NAME}')
+            content = dedent(f'''
+            export PYENV_ROOT={pyenv_root}
+            export PATH={pyenv_root}/bin:$PATH
+            if command -v pyenv 1>/dev/null 2>&1; then
+              eval "$(pyenv init -)"
+            fi
+            ''').strip()
+            appends(conn, FILE_RC, content)
+
+
+        print('pyenv installed. download pyenv-virtualenv')
+
+        '''
+        pyenv-virtualenv respository at github
+        https://github.com/pyenv/pyenv-virtualenv
+        '''
+        conn.run('git clone https://github.com/pyenv/pyenv-virtualenv.git'
+                 f' {pyenv_root}/plugins/pyenv-virtualenv', warn=True)
+        conn.run(
+            f'source {FILE_RC};'
+            f'pyenv install {PYTHON_VER};'
+            f'pyenv virtualenv {PYTHON_VER} {VIRTUALENV_NAME}'
+        )
 
 
 @task
 def download_py_packages(ctx):
     conn = get_connection(ctx)
     with conn.cd(PROJECT_PATH):
-        conn.run(f'source ~/.bash_profile;'
-                 f'pyenv activate {VIRTUALENV_NAME};'
-                 f'pip install -U pip;'
-                 f'pip install -r requirements.txt')
-
+        conn.run(
+            f'source {FILE_RC};'
+            f'pyenv activate {VIRTUALENV_NAME};'
+            f'pip install -U pip;'
+            f'pip install -r requirements.txt'
+        )
 
 
 @task
@@ -200,6 +209,7 @@ def pull(ctx, branch="master"):
 @task
 def clone(ctx):
     conn = get_connection(ctx)
+    conn.run(f'mkdir -p {PROJECT_ROOT}', warn=True)
     with conn.cd(PROJECT_ROOT):
         ls_result = conn.run("ls").stdout
         ls_result = ls_result.split("\n")
@@ -227,5 +237,5 @@ def deploy(ctx):
 
         #  print("migrating database....")
         #  migrate(conn)
-        print("restarting the nginx...")
-        restart(conn)
+        #  print("restarting the nginx...")
+        #  restart(conn)
