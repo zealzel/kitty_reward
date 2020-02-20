@@ -22,6 +22,7 @@ ssh ubuntu@127.0.0.1 -p 2200 -i /Users/zealzel/vagrant_machines/xenial64/.vagran
 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
 '''
 
+
 @task
 def xenial(ctx):
     ctx.user = 'ubuntu'
@@ -51,16 +52,15 @@ def get_connection(ctx):
         return ctx
     else:
         try:
-            with Connection(
-                **defined_kwargs(
-                    host=ctx.host,
-                    user=ctx.user,
-                    port=ctx.port,
-                    connect_kwargs={"key_filename": ctx.key},
-                    inline_ssh_env=True,
-                    forward_agent=ctx.forward_agent)
-                ) as conn:
-                return conn
+            return Connection(
+            **defined_kwargs(
+                host=ctx.host,
+                user=ctx.user,
+                port=ctx.port,
+                connect_kwargs={"key_filename": ctx.key},
+                inline_ssh_env=True,
+                forward_agent=ctx.forward_agent)
+            )
         except Exception as e:
             return None
 
@@ -73,10 +73,17 @@ def ls(ctx):
 
 @task
 def provision(ctx):
-    conn = get_connection(ctx)
-    package_update(conn)
-    download_pip(conn)
-    pyenv(conn)
+    with get_connection(ctx) as conn:
+        package_update(conn)
+        download_pip(conn)
+        pyenv(conn)
+
+
+@task
+def fetch_txt(ctx, filepath):
+    with get_connection(ctx) as conn:
+        txt = conn.run(f'cat {filepath}', hide=True).stdout
+        return txt
 
 
 @task
@@ -105,7 +112,9 @@ def appends_test(ctx):
 
 
 def appends(conn, file, lines):
-    conn.run(f"echo -e '{lines}' >> ~/.bash_profile")
+    content = fetch_txt(conn, file)
+    if not lines in content:
+        conn.run(f"echo -e '{lines}' >> {file}")
 
 
 @task
@@ -160,7 +169,6 @@ def pyenv(ctx):
 
 
         print('pyenv installed. download pyenv-virtualenv')
-
         '''
         pyenv-virtualenv respository at github
         https://github.com/pyenv/pyenv-virtualenv
@@ -203,7 +211,7 @@ def exists(file, dir):
 def pull(ctx, branch="master"):
     conn = get_connection(ctx)
     with conn.cd(PROJECT_PATH):
-        conn.run("git pull origin {}".format(branch))
+        conn.run(f'git pull origin {branch}')
 
 
 @task
@@ -216,19 +224,17 @@ def clone(ctx):
         if exists(PROJECT_NAME, ls_result):
             print("project already exists")
             return
-        conn.run("git clone {} {}".format(REPO_URL, PROJECT_NAME))
+        conn.run(f'git clone {REPO_URL} {PROJECT_NAME}')
 
 
-# deploy task
 @task
 def deploy(ctx):
     conn = get_connection(ctx)
-    if conn is None:
-        sys.exit("Failed to get connection")
     clone(conn)
     with conn.cd(PROJECT_PATH):
         #  print("checkout to dev branch...")
         #  checkout(conn, branch="dev")
+
         print("pulling latest code from dev branch...")
         pull(conn)
 
