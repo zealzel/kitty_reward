@@ -6,7 +6,7 @@ from fabric.config import Config
 
 PROJECT_NAME = 'kitty_reward'
 PROJECT_ROOT = '~/codes'
-HOME = '~/'
+HOME = '~'
 PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
 REPO_URL = f'https://github.com/zealzel/{PROJECT_NAME}.git'
 LOCAL_USER = 'zealzel'
@@ -111,9 +111,19 @@ def appends_test(ctx):
     appends(conn, file, content2)
 
 
+@task
+def file_exist(ctx, file):
+    conn = get_connection(ctx)
+    out = conn.run(f'[ -f {file} ] && echo 1', warn=True, hide=True).stdout
+    return True if out else False
+
+
 def appends(conn, file, lines):
-    content = fetch_txt(conn, file)
-    if not lines in content:
+    lines_already_there = False
+    if file_exist(conn, file):
+        content = fetch_txt(conn, file)
+        lines_already_there = lines in content
+    if not lines_already_there:
         conn.run(f"echo -e '{lines}' >> {file}")
 
 
@@ -166,7 +176,6 @@ def pyenv(ctx):
             fi
             ''').strip()
             appends(conn, FILE_RC, content)
-
 
         print('pyenv installed. download pyenv-virtualenv')
         '''
