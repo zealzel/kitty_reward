@@ -1,20 +1,23 @@
-import sys
 from textwrap import dedent
 from fabric import Connection, task
-import invoke
-from fabric.config import Config
+from fabcore import Remote, get_connection, appends_test
 
 PROJECT_NAME = 'kitty_reward'
-PROJECT_ROOT = '~/codes'
 HOME = '~'
+PROJECT_ROOT = f'{HOME}/codes'
 PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
+FILE_RC = f'{HOME}/.bash_profile'
+
 REPO_URL = f'https://github.com/zealzel/{PROJECT_NAME}.git'
 LOCAL_USER = 'zealzel'
-FILE_RC = f'{HOME}/.bash_profile'
+
+PORT = 5223
 
 
 PYTHON_VER = '3.7.0'
 VIRTUALENV_NAME = PROJECT_NAME
+APPNAME = PROJECT_NAME
+SERVICE_NAME = PROJECT_NAME
 
 
 ''' ssh comamand examples to access vagrant boxes
@@ -43,34 +46,6 @@ def linode(ctx):
     ctx.forward_agent = True
 
 
-def defined_kwargs(**kwargs):
-    return {k: v for k, v in kwargs.items() if v is not None}
-
-
-def get_connection(ctx):
-    if isinstance(ctx, Connection):
-        return ctx
-    else:
-        try:
-            return Connection(
-            **defined_kwargs(
-                host=ctx.host,
-                user=ctx.user,
-                port=ctx.port,
-                connect_kwargs={"key_filename": ctx.key},
-                inline_ssh_env=True,
-                forward_agent=ctx.forward_agent)
-            )
-        except Exception as e:
-            return None
-
-
-@task
-def ls(ctx):
-    conn = get_connection(ctx)
-    conn.run('ls -al')
-
-
 @task
 def provision(ctx):
     with get_connection(ctx) as conn:
@@ -80,51 +55,10 @@ def provision(ctx):
 
 
 @task
-def fetch_txt(ctx, filepath):
-    with get_connection(ctx) as conn:
-        txt = conn.run(f'cat {filepath}', hide=True).stdout
-        return txt
-
-
-@task
 def package_update(ctx):
     conn = get_connection(ctx)
     conn.run('sudo apt update')
 
-
-@task
-def appends_test(ctx):
-    conn = get_connection(ctx)
-    file = '~/.bash_profile'
-
-    # test1: single line
-    content1 = 'export PATH=$HOME/.local/bin:$PATH'
-
-    # test2: multiple lines
-    content2 = dedent('''
-    if command -v pyenv 1>/dev/null 2>&1; then
-      eval "$(pyenv init -)"
-    fi
-    ''').strip()
-
-    appends(conn, file, content1)
-    appends(conn, file, content2)
-
-
-@task
-def file_exist(ctx, file):
-    conn = get_connection(ctx)
-    out = conn.run(f'[ -f {file} ] && echo 1', warn=True, hide=True).stdout
-    return True if out else False
-
-
-def appends(conn, file, lines):
-    lines_already_there = False
-    if file_exist(conn, file):
-        content = fetch_txt(conn, file)
-        lines_already_there = lines in content
-    if not lines_already_there:
-        conn.run(f"echo -e '{lines}' >> {file}")
 
 
 @task
@@ -140,7 +74,6 @@ def download_pip(ctx):
         copy pip binary into ~/.local/bin
     '''
     conn.run('python3 get-pip.py')
-
 
 
 @task
@@ -175,7 +108,7 @@ def pyenv(ctx):
               eval "$(pyenv init -)"
             fi
             ''').strip()
-            appends(conn, FILE_RC, content)
+            appends(conn, FILE_RC, ctx.user, content)
 
         print('pyenv installed. download pyenv-virtualenv')
         '''
@@ -252,5 +185,42 @@ def deploy(ctx):
 
         #  print("migrating database....")
         #  migrate(conn)
+
+        print("restarting the systemd...")
+        gunicorn_service_systemd(conn, SERVICE_NAME)
+
         #  print("restarting the nginx...")
         #  restart(conn)
+
+
+@task
+def gunicorn_service_systemd(ctx, servicename):
+    conn = get_connection(ctx)
+    r = Remote(conn)
+    pyenv_root = f'{r.home}/.pyenv'
+    project_path = f'{r.home}/codes/{PROJECT_NAME}'
+    lines = dedent(f'''
+    [Unit]
+    Description=Gunicorn instance to serve {APPNAME}
+    After=network.target
+
+    [Service]
+    User={ctx.user}
+    Group=www-data
+    WorkingDirectory={project_path}
+    Environment=PATH={pyenv_root}/versions/{VIRTUALENV_NAME}/bin:$PATH
+    ExecStart={pyenv_root}/versions/{VIRTUALENV_NAME}/bin/gunicorn --workers 3 --bind 0.0.0.0:{PORT} app:app
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    ''').strip()
+    r.touch(f'/etc/systemd/system/{servicename}.service', lines, ctx.user)
+    start_service(conn, servicename)
+
+
+@task
+def start_service(ctx, servicename):
+    conn = get_connection(ctx)
+    conn.sudo('systemctl daemon-reload')
+    conn.sudo(f'systemctl restart {servicename}')

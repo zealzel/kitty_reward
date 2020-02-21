@@ -1,0 +1,14 @@
+[Unit]
+Description=Gunicorn instance to serve kitty_reward
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=~/codes/kitty_reward
+Environment=PATH=/home/ubuntu/.pyenv/versions/kitty_reward/bin:$PATH
+ExecStart=/home/ubuntu/.pyenv/versions/kitty_reward/bin/gunicorn --workers 3 --bind 0.0.0.0:5009 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
