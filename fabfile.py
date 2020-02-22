@@ -79,7 +79,7 @@ def download_pip(ctx):
 @task
 def pyenv(ctx):
     conn = get_connection(ctx)
-
+    r = Remote(conn)
     '''
     Prerequisites for ubuntu
     reference: https://github.com/pyenv/pyenv/wiki/Common-build-problems
@@ -95,7 +95,6 @@ def pyenv(ctx):
     with conn.cd(HOME):
         if conn.run('source ~/.bash_profile; pyenv --version', warn=True, hide=True).failed:
             print('pyenv not installed')
-
             '''
             pyenv respository at github
             https://github.com/pyenv/pyenv#locating-the-python-installation
@@ -108,7 +107,7 @@ def pyenv(ctx):
               eval "$(pyenv init -)"
             fi
             ''').strip()
-            appends(conn, FILE_RC, ctx.user, content)
+            r.appends(FILE_RC, content, ctx.user)
 
         print('pyenv installed. download pyenv-virtualenv')
         '''
@@ -183,14 +182,14 @@ def deploy(ctx):
         print("prepare python environment...")
         download_py_packages(conn)
 
-        #  print("migrating database....")
-        #  migrate(conn)
+    #  print("migrating database....")
+    #  migrate(conn)
 
-        print("restarting the systemd...")
-        gunicorn_service_systemd(conn, SERVICE_NAME)
+    print("restarting the systemd...")
+    gunicorn_service_systemd(conn, SERVICE_NAME)
 
-        #  print("restarting the nginx...")
-        #  restart(conn)
+    #  print("restarting the nginx...")
+    #  restart(conn)
 
 
 @task
@@ -222,5 +221,5 @@ def gunicorn_service_systemd(ctx, servicename):
 @task
 def start_service(ctx, servicename):
     conn = get_connection(ctx)
-    conn.sudo('systemctl daemon-reload')
+    conn.sudo(f'systemctl daemon-reload')
     conn.sudo(f'systemctl restart {servicename}')
