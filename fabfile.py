@@ -53,14 +53,6 @@ def linode(ctx):
     ctx.conn = conn
 
 
-#  @task
-#  def tmp(ctx):
-    #  print(ctx.filerc)
-    #  conn = get_connection(ctx)
-    #  r = Remote(conn)
-    #  r.ls()
-    #  conn.run(f'source {ctx.filerc} && pyenv versions')
-
 @task
 def bashrc(ctx):
     conn = ctx.conn
@@ -71,7 +63,7 @@ def bashrc(ctx):
     fi
     ''').strip()
     r.appends('~/.bash_profile', lines, ctx.user)
-    
+
 
 @task
 def provision(ctx):

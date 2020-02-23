@@ -80,5 +80,3 @@ def appends_test(ctx):
 
     r.appends(file, content1, ctx.user)
     r.appends(file, content2, ctx.user)
-    
-
