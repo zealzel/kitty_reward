@@ -7,18 +7,15 @@ def defined_kwargs(**kwargs):
 
 
 def get_connection(ctx):
-    if isinstance(ctx, Connection):
-        return ctx
-    else:
-        return Connection(
-        **defined_kwargs(
-            host=ctx.host,
-            user=ctx.user,
-            port=ctx.port,
-            connect_kwargs={"key_filename": ctx.key},
-            inline_ssh_env=True,
-            forward_agent=ctx.forward_agent)
-        )
+    return Connection(
+    **defined_kwargs(
+        host=ctx.host,
+        user=ctx.user,
+        port=ctx.port,
+        connect_kwargs={"key_filename": ctx.key},
+        inline_ssh_env=True,
+        forward_agent=ctx.forward_agent)
+    )
 
 
 class Remote():
@@ -51,6 +48,9 @@ class Remote():
                 f"echo -e '{lines}' >> {file}"
             )
 
+    def apt_install(self, package):
+        self.c.sudo(f'apt install -y {package}')
+
     def fetch_txt(self, filepath):
         return self.c.run(f'cat {filepath}', hide=True).stdout
 
@@ -80,3 +80,5 @@ def appends_test(ctx):
 
     r.appends(file, content1, ctx.user)
     r.appends(file, content2, ctx.user)
+    
+

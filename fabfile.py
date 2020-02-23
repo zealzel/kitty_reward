@@ -6,7 +6,7 @@ PROJECT_NAME = 'kitty_reward'
 HOME = '~'
 PROJECT_ROOT = f'{HOME}/codes'
 PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
-FILE_RC = f'{HOME}/.bash_profile'
+#  FILE_RC = f'{HOME}/.bash_profile'
 
 REPO_URL = f'https://github.com/zealzel/{PROJECT_NAME}.git'
 LOCAL_USER = 'zealzel'
@@ -34,30 +34,56 @@ def xenial(ctx):
     ctx.port = '2200'
     ctx.key = f'/Users/{LOCAL_USER}/vagrant_machines/{ctx.vagrant_box}/.vagrant/machines/default/virtualbox/private_key'
     ctx.forward_agent = True
+    ctx.filerc = f'{HOME}/.bash_profile'
+    conn = get_connection(ctx)
+    ctx.conn = conn
 
 
 @task
 def linode(ctx):
     ctx.user = 'zealzel'
     ctx.vagrant_box = None
-    ctx.host = '172.104.163.189'
+    ctx.host = '172.104.182.76'
     ctx.port = None
     ctx.key = None
-    ctx.forward_agent = True
+    #  ctx.key = f'/Users/{LOCAL_USER}/.ssh/id_rsa'
+    #  ctx.forward_agent = False
+    ctx.filerc = f'{HOME}/.bash_profile'
+    conn = get_connection(ctx)
+    ctx.conn = conn
 
+
+#  @task
+#  def tmp(ctx):
+    #  print(ctx.filerc)
+    #  conn = get_connection(ctx)
+    #  r = Remote(conn)
+    #  r.ls()
+    #  conn.run(f'source {ctx.filerc} && pyenv versions')
+
+@task
+def bashrc(ctx):
+    conn = ctx.conn
+    r = Remote(conn)
+    lines = dedent(f'''
+    if [ -f ~/.bashrc ]; then
+        source ~/.bashrc
+    fi
+    ''').strip()
+    r.appends('~/.bash_profile', lines, ctx.user)
+    
 
 @task
 def provision(ctx):
-    with get_connection(ctx) as conn:
-        package_update(conn)
-        download_pip(conn)
-        pyenv(conn)
+    package_update(ctx)
+    download_pip(ctx)
+    pyenv(ctx)
 
 
 @task
 def package_update(ctx):
-    conn = get_connection(ctx)
-    conn.run('sudo apt update')
+    conn = ctx.conn
+    conn.sudo('apt update')
 
 
 
@@ -67,9 +93,8 @@ def download_pip(ctx):
         fab download-pip
     '''
     url = 'https://bootstrap.pypa.io/get-pip.py'
-    conn = get_connection(ctx)
+    conn = ctx.conn
     conn.run(f'curl {url} -o get-pip.py')
-
     '''
         copy pip binary into ~/.local/bin
     '''
@@ -78,13 +103,13 @@ def download_pip(ctx):
 
 @task
 def pyenv(ctx):
-    conn = get_connection(ctx)
+    conn = ctx.conn
     r = Remote(conn)
     '''
     Prerequisites for ubuntu
     reference: https://github.com/pyenv/pyenv/wiki/Common-build-problems
     '''
-    conn.run('sudo apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev \
+    conn.sudo('apt install -y make build-essential libssl-dev zlib1g-dev libbz2-dev \
               libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev \
               xz-utils tk-dev libffi-dev liblzma-dev python-openssl git')
 
@@ -107,7 +132,7 @@ def pyenv(ctx):
               eval "$(pyenv init -)"
             fi
             ''').strip()
-            r.appends(FILE_RC, content, ctx.user)
+            r.appends(ctx.filerc, content, ctx.user)
 
         print('pyenv installed. download pyenv-virtualenv')
         '''
@@ -117,7 +142,7 @@ def pyenv(ctx):
         conn.run('git clone https://github.com/pyenv/pyenv-virtualenv.git'
                  f' {pyenv_root}/plugins/pyenv-virtualenv', warn=True)
         conn.run(
-            f'source {FILE_RC};'
+            f'source {ctx.filerc};'
             f'pyenv install {PYTHON_VER};'
             f'pyenv virtualenv {PYTHON_VER} {VIRTUALENV_NAME}'
         )
@@ -125,12 +150,12 @@ def pyenv(ctx):
 
 @task
 def download_py_packages(ctx):
-    conn = get_connection(ctx)
+    conn= get_connection(ctx)
     with conn.cd(PROJECT_PATH):
         conn.run(
-            f'source {FILE_RC};'
-            f'pyenv activate {VIRTUALENV_NAME};'
-            f'pip install -U pip;'
+            f'source {ctx.filerc} &&'
+            f'pyenv activate {VIRTUALENV_NAME} &&'
+            f'pip install -U pip &&'
             f'pip install -r requirements.txt'
         )
 
@@ -150,14 +175,14 @@ def exists(file, dir):
 
 @task
 def pull(ctx, branch="master"):
-    conn = get_connection(ctx)
+    conn = ctx.conn
     with conn.cd(PROJECT_PATH):
         conn.run(f'git pull origin {branch}')
 
 
 @task
 def clone(ctx):
-    conn = get_connection(ctx)
+    conn = ctx.conn
     conn.run(f'mkdir -p {PROJECT_ROOT}', warn=True)
     with conn.cd(PROJECT_ROOT):
         ls_result = conn.run("ls").stdout
@@ -170,31 +195,55 @@ def clone(ctx):
 
 @task
 def deploy(ctx):
-    conn = get_connection(ctx)
-    clone(conn)
+    conn = ctx.conn
+    r = Remote(conn)
+    clone(ctx)
     with conn.cd(PROJECT_PATH):
         #  print("checkout to dev branch...")
         #  checkout(conn, branch="dev")
 
         print("pulling latest code from dev branch...")
-        pull(conn)
+        pull(ctx)
 
         print("prepare python environment...")
-        download_py_packages(conn)
+        download_py_packages(ctx)
 
     #  print("migrating database....")
     #  migrate(conn)
 
     print("restarting the systemd...")
-    gunicorn_service_systemd(conn, SERVICE_NAME)
+    gunicorn_service_systemd(ctx, SERVICE_NAME)
+
+    # install nginx
+    r.apt_install('nginx')
 
     #  print("restarting the nginx...")
     #  restart(conn)
 
 
 @task
+def set_nginx(ctx):
+    r = Remote(get_connection(ctx))
+    lines = dedent(f'''
+    server {{
+       server_name momomuji.xyz;
+       location / {{
+           proxy_pass http://localhost:5000;
+       }}
+
+    }}
+    server {{
+       listen 80;
+       server_name momomuji.xyz;
+    }}
+    ''').strip()
+    process = PROJECT_NAME
+    r.touch(f'/etc/nginx/sites-available/{process}', lines, ctx.user)
+
+
+@task
 def gunicorn_service_systemd(ctx, servicename):
-    conn = get_connection(ctx)
+    conn = ctx.conn
     r = Remote(conn)
     pyenv_root = f'{r.home}/.pyenv'
     project_path = f'{r.home}/codes/{PROJECT_NAME}'
@@ -215,11 +264,11 @@ def gunicorn_service_systemd(ctx, servicename):
     WantedBy=multi-user.target
     ''').strip()
     r.touch(f'/etc/systemd/system/{servicename}.service', lines, ctx.user)
-    start_service(conn, servicename)
+    start_service(ctx, servicename)
 
 
 @task
 def start_service(ctx, servicename):
-    conn = get_connection(ctx)
+    conn = ctx.conn
     conn.sudo(f'systemctl daemon-reload')
     conn.sudo(f'systemctl restart {servicename}')
