@@ -33,5 +33,6 @@ def set_nginx(ctx, processname, domainname, port):
     }}
     ''').strip()
     r.touch(f'/etc/nginx/sites-available/{processname}', lines, ctx.user)
+    conn.sudo(f'ln -s /etc/nginx/sites-available/{processname} /etc/nginx/sites-enabled/{processname}')
     nginx_trick(ctx)
     restart_nginx(ctx)

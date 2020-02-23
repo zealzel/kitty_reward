@@ -1,8 +1,11 @@
 from textwrap import dedent
 from fabric import Connection, task
-from fabcore import Remote, get_connection, appends_test
+from fabcore import Remote, get_connection
 from fab_nginx import set_nginx
-from provision import package_update, download_pip, pyenv
+from fab_provision import package_update, download_pip, pyenv
+from fab_git import pull, clone
+from fab_deploy import download_py_packages, gunicorn_service_systemd, start_service
+
 
 PROJECT_NAME = 'kitty_reward'
 HOME = '~'
@@ -21,7 +24,7 @@ PORT = 5223
 PYTHON_VER = '3.7.0'
 VIRTUALENV_NAME = PROJECT_NAME
 APPNAME = PROJECT_NAME
-SERVICE_NAME = PROJECT_NAME
+SERVICENAME = PROJECT_NAME
 
 
 ''' ssh comamand examples to access vagrant boxes
@@ -63,102 +66,28 @@ def provision(ctx):
 
 
 @task
-def download_py_packages(ctx):
-    conn= get_connection(ctx)
-    with conn.cd(PROJECT_PATH):
-        conn.run(
-            f'source {FILE_RC} &&'
-            f'pyenv activate {VIRTUALENV_NAME} &&'
-            f'pip install -U pip &&'
-            f'pip install -r requirements.txt'
-        )
-
-
-@task
-def echo(ctx, message): # with arguments
-    ''' === with positional argument ===
-        fab echo --message some_message
-    '''
-    conn = get_connection(ctx)
-    conn.run(f'echo {message}')
-
-
-@task
-def pull(ctx, branch="master"):
-    conn = ctx.conn
-    with conn.cd(PROJECT_PATH):
-        conn.run(f'git pull origin {branch}')
-
-
-@task
-def clone(ctx):
-    conn = ctx.conn
-    conn.run(f'mkdir -p {PROJECT_ROOT}', warn=True)
-    with conn.cd(PROJECT_ROOT):
-        ls_result = conn.run("ls").stdout
-        ls_result = ls_result.split("\n")
-        if PROJECT_NAME in ls_result:
-            print("project already exists")
-            return
-        conn.run(f'git clone {REPO_URL} {PROJECT_NAME}')
-
-
-@task
 def deploy(ctx):
     conn = ctx.conn
     r = Remote(conn)
-    clone(ctx)
+    clone(ctx, REPO_URL, PROJECT_ROOT, PROJECT_NAME)
     with conn.cd(PROJECT_PATH):
         #  print("checkout to dev branch...")
         #  checkout(conn, branch="dev")
 
         print("pulling latest code from dev branch...")
-        pull(ctx)
+        pull(ctx, PROJECT_PATH)
 
         print("prepare python environment...")
-        download_py_packages(ctx)
+        download_py_packages(ctx, PROJECT_PATH, FILE_RC, VIRTUALENV_NAME)
 
     #  print("migrating database....")
     #  migrate(conn)
 
     print("restarting the systemd...")
-    gunicorn_service_systemd(ctx, SERVICE_NAME)
+    gunicorn_service_systemd(ctx, SERVICENAME, PROJECT_NAME, APPNAME, VIRTUALENV_NAME, PORT)
 
     # install nginx
     r.apt_install('nginx')
 
     print("setup the nginx...")
     set_nginx(ctx, PROJECT_NAME, MY_DOMAIN_COM, PORT)
-
-
-@task
-def gunicorn_service_systemd(ctx, servicename):
-    conn = ctx.conn
-    r = Remote(conn)
-    pyenv_root = f'{r.home}/.pyenv'
-    project_path = f'{r.home}/codes/{PROJECT_NAME}'
-    lines = dedent(f'''
-    [Unit]
-    Description=Gunicorn instance to serve {APPNAME}
-    After=network.target
-
-    [Service]
-    User={ctx.user}
-    Group=www-data
-    WorkingDirectory={project_path}
-    Environment=PATH={pyenv_root}/versions/{VIRTUALENV_NAME}/bin:$PATH
-    ExecStart={pyenv_root}/versions/{VIRTUALENV_NAME}/bin/gunicorn --workers 3 --bind 0.0.0.0:{PORT} app:app
-    Restart=always
-
-    [Install]
-    WantedBy=multi-user.target
-    ''').strip()
-    r.touch(f'/etc/systemd/system/{servicename}.service', lines, ctx.user)
-    start_service(ctx, servicename)
-
-
-@task
-def start_service(ctx, servicename):
-    conn = ctx.conn
-    conn.sudo(f'systemctl daemon-reload')
-    conn.sudo(f'systemctl restart {servicename}')
