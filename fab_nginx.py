@@ -1,6 +1,6 @@
 from textwrap import dedent
 from fabric import task
-from fabcore import get_connection, Remote
+from fab_core import get_connection, Remote
 
 
 @task

@@ -1,6 +1,6 @@
 from fabric import task
 from textwrap import dedent
-from fabcore import Remote
+from fab_core import Remote
 
 
 @task

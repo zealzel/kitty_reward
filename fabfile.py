@@ -1,6 +1,6 @@
 from textwrap import dedent
 from fabric import Connection, task
-from fabcore import Remote, get_connection
+from fab_core import Remote, get_connection
 from fab_nginx import set_nginx
 from fab_provision import package_update, download_pip, pyenv, install_pip
 from fab_git import pull, clone
