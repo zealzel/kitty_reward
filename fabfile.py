@@ -1,13 +1,18 @@
+import os
+import sys
 from textwrap import dedent
 from fabric import Connection, task
-from fab_core import Remote, get_connection
-from fab_nginx import set_nginx
-from fab_provision import package_update, download_pip, pyenv, install_pip
-from fab_git import pull, clone
-from fab_deploy import (
+
+# fabcore is my own package located in ~/bin
+home =os.path.expanduser('~/')
+sys.path.insert(0, f'{home}/bin')
+from fabcore.fab_core import Remote, get_connection
+from fabcore.fab_nginx import set_nginx
+from fabcore.fab_provision import package_update, download_pip, pyenv, install_pip
+from fabcore.fab_git import pull, clone
+from fabcore.fab_deploy import (
     download_py_packages, gunicorn_service_systemd, start_service, install_certbot
 )
-
 
 PROJECT_NAME = 'kitty_reward'
 HOME = '~'
@@ -60,12 +65,12 @@ def linode(ctx):
     ctx.conn = conn
 
 
-#  @task
-#  def tmp(ctx):
-    #  conn = ctx.conn
-    #  print('ctx.config.run.env', ctx.config.run.env)
-    #  conn.run('echo $BASH_ENV')
-    #  conn.run('pyenv --version')
+@task
+def tmp(ctx):
+    conn = ctx.conn
+    print('ctx.config.run.env', ctx.config.run.env)
+    conn.run('echo $BASH_ENV')
+    conn.run('pyenv --version')
 
 
 @task
