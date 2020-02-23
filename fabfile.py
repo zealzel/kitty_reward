@@ -59,16 +59,13 @@ def linode(ctx):
     conn = get_connection(ctx)
     ctx.conn = conn
 
-    ctx.config.run.env = {'BASH_ENV': '~/.bash_profile'}
 
-
-
-@task
-def tmp(ctx):
-    conn = ctx.conn
-    print('ctx.config.run.env', ctx.config.run.env)
-    conn.run('echo $BASH_ENV')
-    conn.run('pyenv --version')
+#  @task
+#  def tmp(ctx):
+    #  conn = ctx.conn
+    #  print('ctx.config.run.env', ctx.config.run.env)
+    #  conn.run('echo $BASH_ENV')
+    #  conn.run('pyenv --version')
 
 
 @task
