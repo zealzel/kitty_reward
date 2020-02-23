@@ -2,9 +2,11 @@ from textwrap import dedent
 from fabric import Connection, task
 from fabcore import Remote, get_connection
 from fab_nginx import set_nginx
-from fab_provision import package_update, download_pip, pyenv
+from fab_provision import package_update, download_pip, pyenv, install_pip
 from fab_git import pull, clone
-from fab_deploy import download_py_packages, gunicorn_service_systemd, start_service
+from fab_deploy import (
+    download_py_packages, gunicorn_service_systemd, start_service, install_certbot
+)
 
 
 PROJECT_NAME = 'kitty_reward'
@@ -57,11 +59,23 @@ def linode(ctx):
     conn = get_connection(ctx)
     ctx.conn = conn
 
+    ctx.config.run.env = {'BASH_ENV': '~/.bash_profile'}
+
+
+
+@task
+def tmp(ctx):
+    conn = ctx.conn
+    print('ctx.config.run.env', ctx.config.run.env)
+    conn.run('echo $BASH_ENV')
+    conn.run('pyenv --version')
+
 
 @task
 def provision(ctx):
     package_update(ctx)
-    download_pip(ctx)
+    #  download_pip(ctx)
+    install_pip(ctx)
     pyenv(ctx, FILE_RC, PYTHON_VER, VIRTUALENV_NAME)
 
 
@@ -91,3 +105,7 @@ def deploy(ctx):
 
     print("setup the nginx...")
     set_nginx(ctx, PROJECT_NAME, MY_DOMAIN_COM, PORT)
+
+    #install certbot
+    print("install certbot...")
+    install_certbot(ctx)

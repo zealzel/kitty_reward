@@ -36,6 +36,12 @@ def download_pip(ctx):
 
 
 @task
+def install_pip(ctx):
+    conn = ctx.conn
+    conn.sudo('apt install -y python3-pip')
+
+
+@task
 def pyenv(ctx, filerc, python_ver, virtualenv_name):
     conn = ctx.conn
     r = Remote(conn)

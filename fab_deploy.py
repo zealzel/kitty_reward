@@ -45,3 +45,14 @@ def start_service(ctx, servicename):
     conn = ctx.conn
     conn.sudo(f'systemctl daemon-reload')
     conn.sudo(f'systemctl restart {servicename}')
+
+
+@task
+def install_certbot(ctx):
+    conn = ctx.conn
+    conn.sudo('apt update')
+    conn.sudo('apt-get install -y software-properties-common')
+    conn.sudo('add-apt-repository universe')
+    conn.sudo('add-apt-repository ppa:certbot/certbot')
+    conn.sudo('apt update')
+    conn.sudo('apt install -y certbot python-certbot-nginx')
