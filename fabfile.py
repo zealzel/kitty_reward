@@ -1,15 +1,17 @@
 import os
 import re
 import sys
+import copy
 from textwrap import dedent
 from fabric import Connection, task
 
 # fabcore is my own package located in ~/bin
 home =os.path.expanduser('~')
 sys.path.insert(0, f'{home}/bin')
-from fabcore.fab_core import Remote, get_connection
+from fabcore.fab_core import (Remote, get_connection, LOCAL_USER, set_sudoers_no_passwd)
+from fabcore.linode import lin2, lin2_root
 from fabcore.fab_nginx import setup_nginx
-from fabcore.fab_provision import package_update, download_pip, pyenv, install_pip
+from fabcore.fab_provision import package_update, download_pip, pyenv, install_pip, adduser
 from fabcore.fab_git import pull, clone
 from fabcore.fab_deploy import (
     download_py_packages, gunicorn_service_systemd, start_service, install_certbot
@@ -22,10 +24,9 @@ PROJECT_PATH = f'{PROJECT_ROOT}/{PROJECT_NAME}'
 FILE_RC = f'{HOME}/.bash_profile'
 
 REPO_URL = f'https://github.com/zealzel/{PROJECT_NAME}.git'
-LOCAL_USER = 'zealzel'
 
 #  MY_DOMAIN_COM = 'momomuji.xyz'
-MY_DOMAIN_COM = 'zealzel.xyz'
+MY_DOMAIN_COM = 'trtc-stb.site'
 PORT = 5223
 
 
@@ -54,24 +55,9 @@ def xenial(ctx):
 
 
 @task
-def linode(ctx):
-    ctx.user = 'zealzel'
-    ctx.vagrant_box = None
-    ctx.host = '172.104.182.76'
-    ctx.port = None
-    ctx.key = None
-    #  ctx.key = f'/Users/{LOCAL_USER}/.ssh/id_rsa'
-    #  ctx.forward_agent = False
-    conn = get_connection(ctx)
-    ctx.conn = conn
-
-
-@task
 def tmp(ctx):
     conn = ctx.conn
-    print('ctx.config.run.env', ctx.config.run.env)
-    conn.run('echo $BASH_ENV')
-    conn.run('pyenv --version')
+    conn.run('pwd').stdout
 
 
 @task
@@ -86,18 +72,6 @@ def setup_apache2(ctx, projname, mydomain, port=80):
     conn = ctx.conn
     r = Remote(conn)
     home = f'/home/zealzel/codes/{projname}'
-    #  lines = dedent(f'''
-    #  <VirtualHost *:{port}>
-        #  ServerName {mydomain}
-        #  ServerAdmin {ctx.user}@localhost
-        #  DocumentRoot /var/www/wordpress_{projname}
-        #  <Directory /var/www/wordpress_{projname}/>
-            #  AllowOverride All
-        #  </Directory>
-        #  ErrorLog ${{APACHE_LOG_DIR}}/error.log
-        #  CustomLog ${{APACHE_LOG_DIR}}/access.log combined
-    #  </VirtualHost>
-    #  ''').strip()
     lines = dedent(f'''
     <VirtualHost *:80>
         ServerName {mydomain}
@@ -114,23 +88,6 @@ def setup_apache2(ctx, projname, mydomain, port=80):
     </VirtualHost>
     ''').strip()
     r.touch(f'/etc/apache2/sites-available/{projname}.conf', lines, ctx.user)
-
-    # change /etc/apache2/port.conf  --> TBD
-    #  out = r.fetch_txt(f'/etc/apache2/ports.conf').split('\n')
-    #  listens = []
-    #  for i, line in enumerate(out):
-        #  matched = re.search('^Listen\s+(\d{2,5})$', line)
-        #  if matched:
-            #  listens.append([i, int(matched.groups()[0])])
-    #  if port not in [e[1] for e in listens]:
-        #  out.insert(listens[-1][0]+1, f'Listen {port}')
-    #  if listens[0][1]==80:
-        #  del out[listens[0][0]]
-    #  with open('ports.conf.tmp', 'w') as f:
-        #  f.write('\n'.join(out))
-    #  conn.put('ports.conf.tmp')
-    #  conn.sudo('mv ports.conf.tmp /etc/apache2/ports.conf')
-
     conn.sudo('a2enmod rewrite', warn=True)
     conn.sudo('a2enmod proxy', warn=True)
     conn.sudo('a2enmod proxy_http', warn=True)
@@ -149,10 +106,10 @@ def prepare(ctx):
 
 @task
 def provision(ctx):
-    print('\n\npackage_update')
-    package_update(ctx)
     print('\n\nprepare')
     prepare(ctx)
+    print('\n\npackage_update')
+    package_update(ctx)
     print('\n\ninstall pip')
     install_pip(ctx)
     print('\n\npyenv prepare')
@@ -195,3 +152,18 @@ def deploy(ctx):
     #install certbot
     print("\n\ninstall certbot...")
     install_certbot(ctx)
+
+
+if __name__ == "__main__":
+
+    ''' ===== usage =====
+
+    # root level provision (only done once)
+    # fab lin2-root set-sudoers-no-passwd
+
+    # add new user (may done many times)
+    $ fab lin2-root adduser --new-user=zealzel
+
+    $ fab lin2 provision
+    $ fab lin2 deploy
+    '''
